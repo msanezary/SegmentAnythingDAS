@@ -6,6 +6,7 @@ from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import numpy as np
+import os
 import cv2
 import matplotlib.pyplot as plt
 
@@ -15,19 +16,31 @@ class Application:
         self.photo = None
         self.setup_main_window()
         self.labels = self.charger_labels()
+        self.cumulative_mask = None  # To store all masks combined in semi-auto
 
 
     def charger_labels(self):
-        """Charge les labels depuis le fichier labels.txt"""
+        """Charge les labels depuis le fichier labels.txt et crée les répertoires correspondants"""
         try:
             with open('labels.txt', 'r') as file:
-                return [line.strip().strip('"') for line in file.readlines()]
+                labels = [line.strip().strip('"') for line in file.readlines()]
+                
+            # Create directories for each label
+            for label in labels:
+                if not os.path.exists(label):  # Only create if it doesn't exist
+                    os.makedirs(label)
+            
+            return labels
         except FileNotFoundError:
             # Créer le fichier s'il n'existe pas
             with open('labels.txt', 'w') as file:
                 file.write('"label1"\n"label2"\n"label3"')
-            return ["label1", "label2", "label3"]
-
+            # Create directories for the default labels
+            default_labels = ["label1", "label2", "label3"]
+            for label in default_labels:
+                os.makedirs(label)
+            return default_labels
+        
     def sauvegarder_labels(self):
         """Sauvegarde les labels dans le fichier"""
         with open('labels.txt', 'w') as file:
@@ -35,13 +48,16 @@ class Application:
                 file.write(f"{label}\n")
 
     def ajouter_nouveau_label(self, fenetre, listbox1):
-        """Ajoute un nouveau label aux listes"""
+        """Ajoute un nouveau label aux listes et crée un répertoire pour ce label"""
         def valider_nouveau_label():
             nouveau_label = entry_label.get().strip()
             if nouveau_label and nouveau_label not in self.labels:
                 self.labels.append(nouveau_label)
                 listbox1.insert(END, nouveau_label)
                 self.sauvegarder_labels()
+                # Create the new directory (repository) for the new label
+                if not os.path.exists(nouveau_label):
+                    os.makedirs(nouveau_label)
                 popup.destroy()
             elif not nouveau_label:
                 showerror("Erreur", "Le label ne peut pas être vide!")
@@ -151,7 +167,7 @@ class Application:
         ax.imshow(img)
 
     def init_model(self, device='cuda'):
-        sam2_checkpoint = "checkpoints/sam2.1_hiera_large.pt"
+        sam2_checkpoint = "C:/Users/jamai/Projects/SegmentAnythingDAS/sam2/checkpoints/sam2.1_hiera_large.pt"
         model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
     
         # Initialize the model
@@ -200,7 +216,7 @@ class Application:
 
             # Bouton pour ajouter un label
             Button(frame_droit, text="Ajouter un label",
-                   command=lambda: self.ajouter_nouveau_label(fenetreAuto, listbox1)).pack(pady=10)
+                command=lambda: self.ajouter_nouveau_label(fenetreAuto, listbox1)).pack(pady=10)
 
             # Initialize the segmentation model if not already done
             if not hasattr(self, 'model'):
@@ -224,8 +240,31 @@ class Application:
                 canvas1.photo = photo_segmented
                 canvas1.create_image(0, 0, anchor=NW, image=photo_segmented)
 
+                # Button to save the segmented image
+                def save_segmented_image():
+                    # Get the selected label
+                    selected_label = listbox1.get(ANCHOR)
+                    if not selected_label:
+                        showwarning("Sélectionner un label", "Veuillez sélectionner un label avant de sauvegarder!")
+                        return
+                    
+                    # Get the original image name
+                    original_name = os.path.basename(self.image_path)
+                    name, ext = os.path.splitext(original_name)
+                    save_filename = f"segmented_{name}.png"  # Save as segmented_[originalname].png
+                    # Define the path to save the image
+                    save_dir = selected_label
+                    os.makedirs(save_dir, exist_ok=True)
+                    save_path = os.path.join(save_dir, save_filename)
+                    segmented_image.save(save_path)
+                    showinfo("Image enregistrée", f"L'image a été enregistrée sous {save_path}")
+
+                # Add save button to the window
+                Button(fenetreAuto, text="Enregistrer", command=save_segmented_image).pack(pady=10)
+
             except Exception as e:
                 showerror("Erreur", f"Erreur de segmentation : {e}")
+
 
 
 
@@ -299,7 +338,7 @@ class Application:
         # Get the position where the user clicked (event.x, event.y)
         click_x = event.x
         click_y = event.y
-        
+    
         # Convert canvas coordinates to image coordinates (optional if needed)
         canvas_width, canvas_height = canvas.winfo_width(), canvas.winfo_height()
         image_width, image_height = image_pil.size
@@ -307,48 +346,72 @@ class Application:
 
         # Perform segmentation using the clicked point
         input_label = np.array([1])
-        image, masks, scores = self.segment_image_semi(self.image_path, self.model, input_point,input_label)
+        image, masks, scores = self.segment_image_semi(self.image_path, self.model, input_point, input_label)
+    
+        # Initialize cumulative mask if it is None
+        if self.cumulative_mask is None:
+            self.cumulative_mask = np.zeros_like(masks[0], dtype=np.uint8)
+    
+        # Combine the current mask with the cumulative mask
+        self.cumulative_mask = np.logical_or(self.cumulative_mask, masks[0]).astype(np.uint8)
 
-        # Display the segmented image with the mask
-        plt.figure(figsize=(5, 4))
-        plt.imshow(image)
-        self.show_masks(image, masks, scores, point_coords=input_point, input_labels=input_label, borders=True)  # Show masks with clicked point
-        plt.axis('off')
-        plt.show()
+        # Overlay the cumulative mask on the original image
+        combined_image = self.overlay_mask_on_image(image, self.cumulative_mask)
+
+        # Convert the combined image back to a format suitable for tkinter
+        combined_image_pil = Image.fromarray(combined_image)
+        combined_image_resized = combined_image_pil.resize((500, 400), Image.Resampling.LANCZOS)
+        combined_photo = ImageTk.PhotoImage(combined_image_resized)
+
+        # Update the canvas with the new segmented image
+        canvas.image = combined_photo  # Prevent garbage collection
+        canvas.create_image(0, 0, anchor=NW, image=combined_photo)
+
+    def overlay_mask_on_image(self, image, mask):
+        """Combine the image and mask for display."""
+        mask_rgb = np.zeros_like(image)
+        mask_rgb[mask > 0] = [30, 144, 255]  # Mask color
+        alpha = 0.5  # Transparency for the overlay
+        combined_image = (image * (1 - alpha) + mask_rgb * alpha).astype(np.uint8)
+        return combined_image
+
 
     def Semi(self):
         if self.verifier_image():
+            # Reset cumulative mask to start fresh
+            self.cumulative_mask = None
+
             fenetreSemi = Toplevel(self.fenetre)
             fenetreSemi.title("Segmentation Semi-Automatique")
-            
+
             # Frame principal
             main_frame = Frame(fenetreSemi)
             main_frame.pack(expand=True, fill=BOTH, padx=5, pady=5)
-            
+
             # Frame gauche pour l'image
             frame_gauche = Frame(main_frame)
             frame_gauche.pack(side=LEFT, fill=BOTH, expand=True)
-            
+
             canvas2 = Canvas(frame_gauche, width=500, height=400, bg="yellow")
             canvas2.pack(expand=True)
 
             # Frame droit pour les listes
             frame_droit = Frame(main_frame)
             frame_droit.pack(side=RIGHT, fill=Y, padx=5)
-            
+
             # Première liste
             Label(frame_droit, text="Liste 1").pack()
             listbox1 = Listbox(frame_droit, width=30, height=10)
             listbox1.pack(pady=5)
-            
+
             # Remplir les listes
             for label in self.labels:
                 listbox1.insert(END, label)
-            
+
             # Bouton pour ajouter un label
             Button(frame_droit, text="Ajouter un label",
                 command=lambda: self.ajouter_nouveau_label(fenetreSemi, listbox1)).pack(pady=10)
-            
+
             # Initialize the segmentation model if not already done
             if not hasattr(self, 'model'):
                 self.model = self.init_model(device='cuda')  # Or 'cpu' if CUDA is unavailable
@@ -360,12 +423,46 @@ class Application:
                 photo = ImageTk.PhotoImage(image_resized)
                 canvas2.image = photo
                 canvas2.create_image(0, 0, anchor=NW, image=photo)
-                
-                # Bind the click event on canvas to capture the point
+               # Bind the click event on canvas to capture the point
                 canvas2.bind("<Button-1>", lambda event: self.on_canvas_click(event, canvas2, image_pil))
-                
+
+                # Button to save the segmented image
+                def save_segmented_image():
+                    # Get the selected label
+                    selected_label = listbox1.get(ANCHOR)
+                    if not selected_label:
+                        showwarning("Sélectionner un label", "Veuillez sélectionner un label avant de sauvegarder!")
+                        return
+
+                    # Ensure the segmented image is saved
+                    if self.cumulative_mask is not None:
+                        # Apply the cumulative mask to the original image
+                        segmented_image = image_pil.copy()
+                        segmented_image.putalpha(Image.fromarray((self.cumulative_mask * 255).astype('uint8')))
+
+                        # Resize if necessary
+                        segmented_image_resized = segmented_image.resize((500, 400), Image.Resampling.LANCZOS)
+
+                        # Get the original image name
+                        original_name = os.path.basename(self.image_path)
+                        name, ext = os.path.splitext(original_name)
+                        save_filename = f"segmented_{name}.png"  # Save as segmented_[originalname].png
+
+                        save_dir = selected_label
+                        os.makedirs(save_dir, exist_ok=True)
+                        save_path = os.path.join(save_dir, save_filename)
+                        segmented_image_resized.save(save_path)
+                        showinfo("Image enregistrée", f"L'image segmentée a été enregistrée sous {save_path}")
+                    else:
+                        showwarning("Erreur de segmentation", "Aucune segmentation n'a été appliquée pour sauvegarder.")
+
+                # Add save button to the window
+                Button(fenetreSemi, text="Enregistrer", command=save_segmented_image).pack(pady=10)
+
             except Exception as e:
-                showerror("Erreur", f"Erreur lors de l'affichage de l'image : {str(e)}")
+                showerror("Erreur", f"Erreur d'affichage : {e}")
+
+
 
     def run(self):
           self.fenetre.mainloop()
