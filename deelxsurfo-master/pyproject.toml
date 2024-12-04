@@ -1,0 +1,194 @@
+[build-system]
+requires      = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+#######################################
+##            PROJECT INFO
+#######################################
+# Define minimum dependencies requirement in this pyproject.
+# Let pip/uv solve it.
+# For frozen requirements we use a requirements file.
+# Split those req files in different sections:
+# - Core dependencies: requirements.txt : minimum to run the project
+# - CI dependencies: requirements-ci.txt : required for CICD (e.g. pytest, pre-commit)
+# - Dev dependencies: requirements-dev.txt : required for development (e.g. jupyter, uv, etc.). Includes all of the above.
+[project]
+name = "deelxsurfo"
+version = "0.1.2"
+description = """Minimal introduction to process SURFO HDF5 datasets using XDAS"""
+readme = "README.md"
+authors = [{name = "agarc", email = "antoine.garcon@sncf.fr"}]
+requires-python = ">=3.11, <3.12"
+dependencies = [
+    "numpy>=2.0.2",
+    "pydantic>=2.9.2",
+    "python-dotenv>=1.0.1",
+    "xdas>=0.2",
+]
+
+[project.optional-dependencies]
+ci = [
+    "ruff>=0.6.7",
+    "pytest-cov>=5.0.0",
+    "pre-commit>=3.8.0",
+]
+dev = [
+    "ipykernel>=6.0.0",
+    "ipython>=8.10.0",
+]
+
+[project.urls]
+Homepage = "https://gitlab-repo-res.apps.eul.sncf.fr/dsir/groupeeri-dsir/06024/deelxsurfo"
+
+
+#######################################
+##            PYTESTS
+#######################################
+# Pytest options, with coverage reports
+[tool.pytest.ini_options]
+# markers can be used to ignore tests
+norecursedirs =[".git",
+                "venv",
+                "__pycache__"]
+addopts = "-v --durations=0 --cov=src tests --cov-report=term  --cov-report=html --cov-report=json --cov-report=xml"
+cache_dir = ".cache/cov/"
+# Path to test files and standard tests file naming
+testpaths = "tests"
+python_files = "tests_*.py"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "io: marks tests as I/O (deselect with '-m \"not io\"')",
+    "costly: marks tests as costly (deselect with '-m \"not costly\"')",
+]
+
+#######################################
+##            COVERAGE
+#######################################
+[tool.coverage.run]
+source = ["./src"]
+omit = ["tests/*",
+        "__init__.py"]
+
+# Parsable output
+[tool.coverage.html]
+directory = ".cache/cov/report.html"
+
+[tool.coverage.json]
+output = ".cache/cov/report.json"
+pretty_print = true
+
+[tool.coverage.xml]
+output = ".cache/cov/report.xml"
+
+[tool.coverage.report]
+exclude_also = ["if self.debug:",
+               "if __name__ == .__main__.:",
+               "@jit",
+               "@numba"]
+
+
+#######################################
+##            MYPY
+#######################################
+# NOTE: Mypy is slow, raises a lot of false positives and is not that interesting anymore.
+# For this reason I suggest you not to use it in production and use pylance locally.
+# Nontheless this config is somewhat acceptable and nice to work with.
+# [tool.mypy]
+# python_version = "3.12"
+# exclude = "tests/"
+# # Force type hint in every function definition
+# disallow_untyped_defs = true
+# # Allows implicit optional when settings a default value.
+# no_implicit_optional = false
+# # Prevent "any" returns and type def. This is very strict and could be set to false
+# warn_return_any = false
+
+
+#######################################
+##               RUFF
+#######################################
+# A decent Ruff configuration, fairly strict.
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+# Exclude a variety of commonly ignored directories.
+exclude = []
+
+[tool.ruff.lint.per-file-ignores]
+# Less strict rules for tests files.
+"tests/*" = [
+    "D",    # checks for docstrings
+    "S101", # checks for asserts
+]
+"*.ipynb" = [
+    "T201",   # print statements
+    "D103",   # missing docstring in public function
+    "ANN001", # missing type annotation for function argument
+    "ANN201"  # missing return annotation for function
+]
+
+[tool.ruff.lint]
+# All rules are listed here : https://docs.astral.sh/ruff/rules
+select = ["ALL"]
+ignore = [
+    # DISABLED: (generally accepted as bad rules)
+    "ANN002", # missing type annotation for *arg
+    "ANN003", # missing type annotation for **kwarg
+    "ANN101", # missing type annotation for `self` in method
+    "ANN102", # missing type annotation for `cls` in classmethod
+    "FIX",    # force issue resolving (in todos)
+    "SIM118", # this prevents the use of keys() in dictionaries. But forgets pd.Series have keys
+    "TD003",  # force issue link in todos
+    "UP007",  # use `X | Y` for type annotations: issues with the Optional module of type package
+    "COM812", # conflict with black formatter
+    "ISC001", # conflict with black formatter
+    "SIM108", # if else statement in single line
+    # CONTROVERSIAL DISABLED: (discuss those with your tech lead)
+    "BLE",    # ignore all blind exception issues
+    "D415",   # first line should end with a period, question mark, or exclamation point
+    "FBT",    # this limits the use of default boolean arguments in function definitions
+    "PTH",    # proper use of PATH package
+    "RET504", # prevents assignment of a variable before its return. Ignore for understandable code
+    "RUF013", # prohibits usage of default | None union
+    # TO SOLVE DISABLED: (issues with the codebase, put rules here if you still want to commit)
+]
+
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed (_temp_var).
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100 # discuss this with your tech lead
+
+[tool.ruff.lint.pydocstyle]
+# Use Google-style docstrings.
+convention = "google"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+
+
+#######################################
+##     PYRIGHT/PYLANCE FOR VSCODE
+#######################################
+# Note: your primary linter should be ruff, but vscode users enjoy some of the Pylance features.
+# This is a very loose Pylance config, compatible with Ruff.
+[tool.pyright]
+reportInvalidTypeForm = false
+reportOptionalSubscript = false
+reportOptionalMemberAccess = false
+reportIncompatibleMethodOverride = false
+typeCheckingMode = "basic"
