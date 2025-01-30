@@ -39,7 +39,8 @@ python application.py
 ```
 
 ## 💡 Notes
-- You might need additional dependencies—check `requirements.txt` if available.
+- You might need additional dependencies—check `requirements.txt`.
+
 
 
 
