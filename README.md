@@ -39,6 +39,7 @@ python application.py
 ```
 
 ## 💡 Notes
+- The automatic_mask_generator.ipynb file contains the steps of choosing and testing the different mask generators for our data. 
 - You might need additional dependencies—check `requirements.txt` if available.
 
 

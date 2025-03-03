@@ -227,7 +227,7 @@ class Application:
     
         # Generate the mask for the given image
         mask_generator = SAM2AutomaticMaskGenerator(model=model,
-                                                    points_per_side=32,
+                                                    points_per_side=64,
                                                     points_per_batch=64,
                                                     pred_iou_thresh=0.7,
                                                     stability_score_thresh=0.92,
@@ -309,21 +309,28 @@ class Application:
                     if not selected_label:
                         showwarning("Sélectionner un label", "Veuillez sélectionner un label avant de sauvegarder!")
                         return
-                    
-                    # Get the original image name
-                    original_name = os.path.basename(self.image_path)
-                    name, ext = os.path.splitext(original_name)
-                    save_filename = f"segmented_{name}.png"  # Save as segmented_[originalname].png
-                    # Define the path to save the image
-                    save_dir = selected_label
-                    os.makedirs(save_dir, exist_ok=True)
-                    save_path = os.path.join(save_dir, save_filename)
-                    segmented_image.save(save_path)
-                    showinfo("Image enregistrée", f"L'image a été enregistrée sous {save_path}")
+
+                    # Ensure the segmented image is saved
+                    if self.current_mask is not None:
+                        label_folder = os.path.join(selected_label)
+                        mask_number = len(os.listdir(label_folder)) + 1
+                        # Get the original image name
+                        original_name = os.path.basename(self.image_path)
+                        name, ext = os.path.splitext(original_name)
+                        save_filename = f"{name}_{mask_number}.npy"  # Save as segmented_[originalname].png
+
+                        save_dir = selected_label
+                        os.makedirs(save_dir, exist_ok=True)
+                        save_path = os.path.join(save_dir, save_filename)
+                        contour = find_contours((self.current_mask).astype(int),level=0.5)
+                        flattened_contour = np.vstack([np.round(c).astype(int) for c in contour])
+                        np.save(save_path, flattened_contour)
+                        showinfo("Image enregistrée", f"L'image segmentée a été enregistrée sous {save_path}")
+                    else:
+                        showwarning("Erreur de segmentation", "Aucune segmentation n'a été appliquée pour sauvegarder.")
 
                 # Add save button to the window
                 Button(fenetreAuto, text="Enregistrer", command=save_segmented_image).pack(pady=10)
-
             except Exception as e:
                 showerror("Erreur", f"Erreur de segmentation : {e}")
 
@@ -400,7 +407,7 @@ class Application:
         # Get the position where the user clicked (event.x, event.y)
         click_x = event.x
         click_y = event.y
-    
+
         # Convert canvas coordinates to image coordinates (optional if needed)
         canvas_width, canvas_height = canvas.winfo_width(), canvas.winfo_height()
         image_width, image_height = image_pil.size
@@ -409,7 +416,7 @@ class Application:
         # Perform segmentation using the clicked point
         input_label = np.array([1])
         image, masks, scores = self.segment_image_semi(self.image_path, self.model, input_point, input_label)
-    
+
         self.current_mask = masks[0].astype(int)
 
         # Overlay the cumulative mask on the original image
@@ -423,6 +430,10 @@ class Application:
         # Update the canvas with the new segmented image
         canvas.image = combined_photo  # Prevent garbage collection
         canvas.create_image(0, 0, anchor=NW, image=combined_photo)
+
+        # Draw a point at the clicked location (mark it with a red circle)
+        canvas.create_oval(click_x - 5, click_y - 5, click_x + 5, click_y + 5, outline='red', width=2)
+
 
     def overlay_mask_on_image(self, image, mask):
         """Combine the image and mask for display."""
